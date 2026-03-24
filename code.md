@@ -150,3 +150,101 @@ solution.grid, solution.value()
 - 扰动步长：这里用的是交换，小步长。如果用矩阵重排算大步长，不好收敛等
 
 
+## Evolutionary Algorithm
+
+同样以N皇后问题为例
+**需要定义一个评价函数（用于选择个体），和产生后代的机制。保持每轮种群数量不变，迭代一定次数，算出当前最优解，再产生新种群**
+- 编码：表示皇后位置的一维数组天然可当作编码
+- 交配：根据锦标赛选出parents，随机挑选parent1中某一段，按顺序拼接parent2中除了刚才那段中的其他数字即可作为交配
+- 变异：产生的后代自己交换某两个位置（生成随机数小于设定的变异概率才变异）
+- 选择：锦标赛选择法，种群中随机选5个候选者，其中适应度最好的那个被选为parent1，parent2同理。
+- 新种群：加入当前最优个体，剩余个体通过交配和变异产生，直到种群数量达到设定值
+
+```python
+def order_crossover(parent1, parent2, n): #杂交
+
+    idx1, idx2 = sorted(np.random.choice(range(n), 2, replace=False)) # 选择杂交中交换的区间
+    
+    child = np.full(n, -1) #初始化后代
+    subset = parent1[idx1:idx2+1]
+    child[idx1:idx2+1] = subset #将parent1的子序列复制到child中
+    
+    fill_values = [x for x in parent2 if x not in subset] #从parent2中选择不在子序列中的元素，按照顺序填充到child中
+    
+    current_fill = 0 
+    for i in range(n):
+        if child[i] == -1:
+            child[i] = fill_values[current_fill]
+            current_fill += 1
+            
+    return child
+
+def swap_mutation(grid, n):  #变异
+    i, j = np.random.choice(n, 2, replace=False)
+    grid[i], grid[j] = grid[j], grid[i]
+    return grid
+
+def genetic_algorithm(n, pop_size=100, max_generations=1000, mutation_rate=0.1):
+    # 以随机排列的形式初始化种群，每个个体都是一个长度为n的数组，表示每列皇后的位置
+    population = [np.random.permutation(n) for _ in range(pop_size)] 
+    history = []
+    best_solution = None
+    min_conflicts = float('inf') #最小冲突初始化为无穷大
+
+    prob = NQueenProblem(None, n, None) #初始化一次问题实例，方便后面用他的value函数计算冲突数
+
+    for generation in range(max_generations):  #迭代次数      
+        scores = []
+        for individual in population:
+            prob.grid = individual #将个体编码传进实例参数，以正确计算value
+            conflicts = prob.value()
+            scores.append(conflicts)
+        
+        scores = np.array(scores)
+        
+        # Track best solution
+        current_best_idx = np.argmin(scores)  #找出冲突最少的个体
+        current_best_conflicts = scores[current_best_idx]
+        history.append(current_best_conflicts)
+        
+        if current_best_conflicts < min_conflicts:  
+            min_conflicts = current_best_conflicts
+            best_solution = population[current_best_idx]
+        
+        if min_conflicts == 0: #找到完美解，提前终止
+            print(f"Solution found at generation {generation}!")
+            break
+            
+        # Selection & Reproduction
+        new_population = []
+        
+        new_population.append(population[current_best_idx]) #先加入当前最优个体 
+        
+        # 当个体数量不够时，利用锦标赛法繁殖新个体进行补充
+        while len(new_population) < pop_size:
+            # 锦标赛挑选法
+            # Select 2 parents
+            # Parent 1
+            # 种群中选5个候选者，其中适应度最好的那个被选为parent1
+            candidates = np.random.choice(len(population), 5, replace=False)
+            p1_idx = candidates[np.argmin(scores[candidates])]
+            parent1 = population[p1_idx]
+            
+            # Parent 2
+            candidates = np.random.choice(len(population), 5, replace=False)
+            p2_idx = candidates[np.argmin(scores[candidates])]
+            parent2 = population[p2_idx]
+            
+            # Crossover
+            child = order_crossover(parent1, parent2, n)
+            
+            # Mutation
+            if np.random.rand() < mutation_rate:
+                child = swap_mutation(child, n)
+                
+            new_population.append(child)
+            
+        population = new_population
+
+    return NQueenProblem(best_solution, n, None), history
+```
