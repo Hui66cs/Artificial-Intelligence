@@ -248,3 +248,167 @@ def genetic_algorithm(n, pop_size=100, max_generations=1000, mutation_rate=0.1):
 
     return NQueenProblem(best_solution, n, None), history
 ```
+
+## Backtracking Search (bts)
+类似DFS，递归地构建解空间树。当构建到某一层（对某个变量赋值）时，如果发现当前解不满足限制条件，则回溯到上一层（取消对该变量的赋值），尝试其他分支。
+若搜索树较大，可结合启发式方法来提高效率。每次赋值变量时，需记录剩余变量的合法值数量。
+* MRV：每次选择可选合法值最少的变量进行赋值，优先处理最受限制的变量。
+* LCV：对该变量赋值时选择对其他变量合法值影响最小的结果，减少冲突的产生。
+* 前向检查：每次赋值后，检查剩余变量的合法值数量，如果某个变量没有合法值了（即无解），立即剪枝回溯。
+
+```python
+def bts(problem):
+    action_stack = [] #目前已放入的所有皇后位置
+
+    #栈顶元素（m，n）表示第m行最后尝试的是放在n列
+    stack = [(0, -1)]  # 从第0行开始尝试
+
+    while not problem.is_satisfy(action_stack):
+            
+        row, col = stack.pop()
+        
+        next_col = col + 1
+        found_valid_pos = False
+        
+        while next_col < problem.N:
+
+            current_pos = (row, next_col) 
+            
+            temp_state = action_stack + [current_pos] #加入进来测试
+            
+            if problem.is_valid(temp_state):
+                found_valid_pos = True
+                
+                stack.append((row, next_col))
+                
+                # Update action_stack
+                action_stack.append(current_pos)
+                yield action_stack
+                
+                # 这一行皇后处理完成，尝试放下一个皇后
+                if row + 1 < problem.N:
+                    stack.append((row + 1, -1))
+                break
+            
+            next_col += 1 #当前位置皇后invalid，尝试放在下一个位置
+            
+        if not found_valid_pos: # 这一行没有位置valid，回溯
+            if action_stack:
+                action_stack.pop()
+                yield action_stack
+```
+
+加入启发式方法的bts：
+```python
+import copy
+
+def improving_bts(problem):
+    action_stack = []
+    domains = {i: list(range(problem.N)) for i in range(problem.N)}  # 每行的可选列  
+    untested_rows=[i for i in range(problem.N)] #未放置皇后的行
+    stack = [([],domains,untested_rows)]  # 当前状态，目前合法的位置，未测试过的行
+
+    while stack:
+        
+        cur_state, cur_domain, cur_untested_rows = stack.pop()
+
+        while len(action_stack) > len(cur_state): # 说明回溯了，把action_stack弹出直到同个状态
+            action_stack.pop()
+            yield action_stack  
+            
+        # 当前快照有新进展，则将其加入 action_stack
+        if len(cur_state) > len(action_stack):
+            action_stack.append(cur_state[-1])
+            yield action_stack
+
+        if problem.is_satisfy(cur_state): #满足条件，退出
+            break
+        
+        row = min(cur_untested_rows, key=lambda r: len(cur_domain[r])) #取出目前未测试行中合法位置最少者：MRV
+            
+        def count_conflicts(col):
+            # 如果在这个(row, col)放皇后，会减少其余行多少个可选位置
+            conflicts = 0
+            for r in cur_untested_rows:
+                if r != row:
+                    for c in cur_domain[r]:
+                        if not problem.is_valid(cur_state + [(row, col)] + [(r, c)]): 
+                            conflicts += 1
+            return conflicts
+
+
+        # 遍历（行，可选列），选出其中对domains影响最小的列：LCV
+        cols_to_try = sorted(cur_domain[row], key=count_conflicts, reverse=True)
+        
+        for col in cols_to_try:
+            # 准备下一层的快照
+            next_state = cur_state + [(row, col)]
+            next_untested = [r for r in cur_untested_rows if r != row]
+            next_domain = copy.deepcopy(cur_domain) 
+            
+            # 目前的state都是合法的，无需再次检查
+            is_valid_branch = True
+            for r in next_untested:
+                # 过滤掉所有与当前(row, col)冲突的位置
+                next_domain[r] = [
+                    c for c in next_domain[r] 
+                    if problem.is_valid(next_state + [(r, c)])
+                ]
+                # 再次剪枝:forward checking
+                if not next_domain[r]:
+                    is_valid_branch = False
+                    break
+                    
+            if is_valid_branch:
+                # 每个合法的col_to_try都压栈，用于后续回溯
+                stack.append((next_state, next_domain, next_untested))
+```
+
+## Local Search 
+先随机生成一组解（可以是不满足限制条件的）。然后挑选当前解中有冲突的一个变量(不总是选择冲突最多的，防止陷入局部最优)，改变它的取值使得冲突数减少最多。重复这个过程直到找到满足条件的解或者达到迭代次数上限。
+**随机算法，可能无法找到可行解，但效率极高（适合搜索树巨大的情况）**
+以八皇后问题为例，初始解可以是每行一个皇后，列随机分布。每一步选择一个有冲突的皇后，尝试将它移动到同一行的其他列，计算每个位置的冲突数，选择冲突数最少的位置移动过去。重复这个过程直到找到无冲突的解或者达到迭代次数上限。
+
+```python
+import random
+
+def min_conflict(problem):
+    action_stack = [(i, np.random.choice(problem.N)) for i in range(problem.N)]
+    max_step = 1000
+    cur_step = 0
+
+    def is_conflict(r1, c1, r2, c2):
+        return c1 == c2 or (r1 - c1 == r2 - c2) or (r1 + c1 == r2 + c2)
+    
+    while not problem.is_satisfy(action_stack) and cur_step < max_step:
+        cur_step += 1
+        conflicts = [] #记录当前有冲突的皇后位置
+        for i1, c1 in action_stack:
+            for i2, c2 in action_stack:
+                if i1 != i2: #不和原来的自己比较
+                    if is_conflict(i1, c1, i2, c2):
+                        conflicts.append((i1, c1))
+                        break
+        if not conflicts: 
+            break
+        (x,y)=random.choice(conflicts)  #随机选择一个冲突的皇后
+
+        #找出冲突最少的位置
+        min_conflict_col = []  
+        min_conflict_count = float('inf')
+        for ny in range(problem.N):  
+            if ny != y:
+                conflict_count = 0
+                for i, j in action_stack:
+                    if i != x : #不和原来的自己比较
+                        if is_conflict(x, ny, i, j):
+                            conflict_count += 1
+                if conflict_count < min_conflict_count:
+                    min_conflict_col = [ny]
+                    min_conflict_count = conflict_count
+                elif conflict_count == min_conflict_count:
+                    min_conflict_col.append(ny)
+                    
+        action_stack[x] = (x, random.choice(min_conflict_col))
+        yield action_stack
+```
