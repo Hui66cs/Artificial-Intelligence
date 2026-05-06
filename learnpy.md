@@ -1,3 +1,5 @@
+# 基础
+
 ## 索引
 1. [-1]  # 获取最后一个元素
 2. [:] # 获取中所有元素，返回一个对应类型的对象（如列表，元组）
@@ -70,3 +72,11 @@ d = dict()
 4. 获取所有键： d.keys()  # 返回一个包含所有键的视图
 5. 获取所有值： d.values()  # 返回一个包含所有值的视图
    
+
+# 机器学习
+
+## k聚类
+```python
+from sklearn import cluster
+clusterer = cluster.KMeans(n_clusters=k, init='k-means++', n_init='auto', random_state=42).fit(df[['petal length (cm)', 'petal width (cm)']])
+```
